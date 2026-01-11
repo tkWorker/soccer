@@ -3,166 +3,85 @@
 <head>
 <meta charset="UTF-8">
 <title>Soccer Tactics Board</title>
+
 <style>
-body{margin:0;background:#eee}
-#toolbar{display:flex;gap:6px;padding:8px;background:#222;color:#fff}
+body{
+  margin:0;
+  background:#eee;
+  overflow:hidden;
+  display:flex;
+  flex-direction:row;
+  font-family:sans-serif;
+}
+
+#main-area{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+}
+
+#toolbar{
+  display:flex;
+  gap:6px;
+  padding:8px;
+  background:#222;
+  color:white;
+}
 button{padding:6px 10px}
-canvas{display:block;margin:auto;background:white}
+
+canvas{
+  display:block;
+  background:white;
+  margin:auto;
+}
+
+#side{
+  width:200px;
+  background:#fff;
+  padding:10px;
+  border-left:1px solid #ccc;
+}
+#side h3{
+  margin-top:0;
+}
+input[type=range]{
+  width:100%;
+}
 </style>
 </head>
+
 <body>
 
-<div id="toolbar">
-<button onclick="mode='move'">👤移動</button>
-<button onclick="mode='pen'">✏鉛筆</button>
-<button onclick="mode='eraser'">🧽消しゴム</button>
-<button onclick="set4213()">4-2-1-3</button>
-<button onclick="resetAll()">リセット</button>
-<button onclick="saveLocal()">保存</button>
-<button onclick="loadLocal()">読込</button>
+<div id="main-area">
+
+  <div id="toolbar">
+    <button onclick="mode='move'">👤移動</button>
+    <button onclick="mode='pen'">✏鉛筆</button>
+    <button onclick="mode='eraser'">🧽消しゴム</button>
+    <button onclick="set4213()">4-2-1-3</button>
+    <button onclick="resetAll()">リセット</button>
+
+    <button onclick="saveLocal()">保存</button>
+    <button onclick="loadLocal()">読込</button>
+
+    <button onclick="saveJSON()">JSON保存</button>
+    <button onclick="document.getElementById('jsonFile').click()">JSON読込</button>
+    <input type="file" id="jsonFile" accept="application/json" style="display:none">
+  </div>
+
+  <canvas id="c" width="1200" height="700"></canvas>
 </div>
 
-<canvas id="c" width="1200" height="700"></canvas>
+<div id="side">
+  <h3>サイズ設定</h3>
 
-<script>
-const c=document.getElementById("c"),ctx=c.getContext("2d");
-let mode="move",drawing=false,dragging=false,selecting=false;
-let dragByLeft=false,dragByRight=false;
-let startPos=null,selectionRect=null;
+  <div>選手サイズ</div>
+  <input type="range" min="10" max="40" value="16" id="playerSize">
 
-const PLAYER_R=16,BALL_R=12,HIT_R=20;
-let paths=[],ball={x:600,y:350};
-let players=[],enemies=[],selected=[];
+  <div style="margin-top:10px;">ボールサイズ</div>
+  <input type="range" min="8" max="30" value="12" id="ballSize">
+</div>
 
-/* フォーメーション */
-function set4213(){
- const base=[
-  {x:120,y:350},
-  {x:260,y:150},{x:260,y:280},{x:260,y:420},{x:260,y:550},
-  {x:480,y:280},{x:480,y:420},
-  {x:650,y:300},
-  {x:820,y:200},{x:920,y:350},{x:820,y:500}
- ];
- players=base.map(p=>({x:1200-p.x,y:p.y}));
- enemies=base.map(p=>({x:p.x-40,y:p.y}));
- draw();
-}
-function resetAll(){paths=[];set4213();}
-
-/* 描画 */
-function drawField(){
- ctx.clearRect(0,0,c.width,c.height);
- ctx.strokeRect(50,50,1100,600);
- ctx.beginPath();ctx.moveTo(600,50);ctx.lineTo(600,650);ctx.stroke();
- ctx.beginPath();ctx.arc(600,350,80,0,Math.PI*2);ctx.stroke();
- ctx.strokeRect(50,300,25,100);
- ctx.strokeRect(1125,300,25,100);
-}
-function drawCircle(p,r,col){
- ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);
- ctx.fillStyle=col;ctx.fill();ctx.stroke();
-}
-function draw(){
- drawField();
- paths.forEach(p=>{
-  ctx.beginPath();
-  p.points.forEach((pt,i)=>i?ctx.lineTo(pt.x,pt.y):ctx.moveTo(pt.x,pt.y));
-  ctx.stroke();
- });
- players.forEach(p=>drawCircle(p,PLAYER_R,selected.includes(p)?"#0ff":"blue"));
- enemies.forEach(p=>drawCircle(p,PLAYER_R,selected.includes(p)?"#faa":"red"));
- drawCircle(ball,BALL_R,selected.includes(ball)?"#555":"black");
-
- if(selectionRect){
-  ctx.setLineDash([6,4]);
-  ctx.strokeRect(selectionRect.x,selectionRect.y,selectionRect.w,selectionRect.h);
-  ctx.setLineDash([]);
- }
-}
-
-/* util */
-function pos(e){
- const r=c.getBoundingClientRect();
- return {x:e.clientX-r.left,y:e.clientY-r.top};
-}
-function hit(o,p){return Math.hypot(o.x-p.x,o.y-p.y)<HIT_R}
-function hitPath(pa,p){return pa.points.some(pt=>Math.hypot(pt.x-p.x,pt.y-p.y)<10)}
-
-/* 操作 */
-c.onpointerdown=e=>{
- const p=pos(e); startPos=p;
-
- if(mode==="pen"){drawing=true;paths.push({points:[p]});return;}
- if(mode==="eraser"){paths=paths.filter(pa=>!hitPath(pa,p));draw();return;}
-
- if(e.button===2){ // 右クリック
-  selecting=true; dragByRight=true; dragByLeft=false;
-  selected=[];
-  return;
- }
-
- // 左クリック
- dragByLeft=true; dragByRight=false;
-
- if(selected.some(o=>hit(o,p))){
-  dragging=true;
-  return;
- }
-
- selected=[];
- [...players,...enemies,ball].forEach(o=>{if(hit(o,p))selected.push(o)});
- dragging=selected.length>0;
-};
-
-c.onpointermove=e=>{
- const p=pos(e);
-
- if(drawing){paths.at(-1).points.push(p);draw();return;}
-
- if(selecting){
-  selectionRect={
-   x:Math.min(startPos.x,p.x),
-   y:Math.min(startPos.y,p.y),
-   w:Math.abs(p.x-startPos.x),
-   h:Math.abs(p.y-startPos.y)
-  };
-  selected=[];
-  [...players,...enemies,ball].forEach(o=>{
-   if(o.x>selectionRect.x&&o.x<selectionRect.x+selectionRect.w&&
-      o.y>selectionRect.y&&o.y<selectionRect.y+selectionRect.h)
-      selected.push(o);
-  });
- }
-
- if(dragging){
-  const dx=p.x-startPos.x,dy=p.y-startPos.y;
-  selected.forEach(o=>{o.x+=dx;o.y+=dy});
-  startPos=p;
- }
-
- draw();
-};
-
-c.onpointerup=()=>{
- drawing=false;dragging=false;selecting=false;selectionRect=null;
- if(dragByLeft) selected=[];   // ★ 左ドラッグ終了で解除
- dragByLeft=false;dragByRight=false;
- draw();
-};
-
-c.oncontextmenu=e=>e.preventDefault();
-
-/* 保存 */
-function saveLocal(){
- localStorage.setItem("tactics",JSON.stringify({players,enemies,ball,paths}));
- alert("保存しました");
-}
-function loadLocal(){
- const d=localStorage.getItem("tactics");
- if(d){({players,enemies,ball,paths}=JSON.parse(d));draw();}
-}
-
-set4213();
-</script>
+<script src="main.js"></script>
 </body>
 </html>
